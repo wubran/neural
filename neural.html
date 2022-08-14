@@ -45,6 +45,9 @@
 					this.bias = 0;
 					this.value = 0;
 
+					this.newBias = 0;
+					this.newWeights = 0;
+
 					if(this.layer > 0){
 						let inputNodes = this.net.nodes[this.layer-1];
 						this.inputWeights = []; //set random on gauss
@@ -56,6 +59,8 @@
 
 					this.x = x;
 					this.y = y;
+
+					this.dCurdPrev = [];
 				}
 				update(){
 					let inputNodes = this.net.nodes[this.layer-1];
@@ -88,11 +93,25 @@
 						let inputNodes = this.net.nodes[this.layer-1];
 						for(let i=0; i<inputNodes.length; i++){
 							ctx.strokeStyle = (this.inputWeights[i] < 0) ? "red" : "green";
-							ctx.lineWidth = this.inputWeights[i];
+							ctx.lineWidth = Math.sqrt(this.inputWeights[i]);
 							ctx.beginPath();
 							ctx.moveTo(this.x,this.y);
 							ctx.lineTo(inputNodes[i].x, inputNodes[i].y);
 							ctx.stroke();
+						}
+					}
+				}
+				deriv(){ //sets dCurdPrev
+					// dcurrent/dprevious = drelu/dinside * d((previous*w)+b)/dprevious
+					// dcurrent/dprevious = drelu/dinside * w
+					// if the current value is 0, then drelu/dinside = 0. else, 1
+					let inputNodes = this.net.nodes[this.layer-1];
+
+					if(this.value = 0){
+						this.dCurdPrev.fill(0);
+					}  else{
+						for(let i=0; i<inputNodes.length; i++){
+							this.dCurdPrev[i] = this.inputWeights[i];
 						}
 					}
 				}
@@ -114,6 +133,8 @@
 					//[[node0,node1,node2]
 					// [node0,node1,node2]
 					// [node0,node1,node2]]
+					
+					this.sftmx = new Array(nodeList[nodeList.length-1]);
 				}
 				input(inList){
 					for(let i=0; i<inList.length; i++){ //set value of each node in layer 0
@@ -124,7 +145,7 @@
 							this.nodes[i][j].update();
 						}
 					}
-					this.draw();
+					this.softmax();
 				}
 				draw(){ // draw in a rectangular box
 					ctx.lineWidth = 1;
@@ -143,6 +164,57 @@
 							this.nodes[i][j].draw();
 						}
 					}
+					
+					let outNodes = this.nodes[this.nodes.length-1]
+					ctx.font = 12 + "px Arial";
+					ctx.fillStyle = "white"
+					for(let i = 0; i<outNodes.length; i++){
+						ctx.fillText(Math.round(this.sftmx[i]*100)/100, outNodes[i].x+60, outNodes[i].y);
+					}
+				}
+				softmax(){
+					let outNodes = this.nodes[this.nodes.length-1];
+					let eList = [];
+					let eSum = 0;
+					//calculate sum of e^'s
+					for(let i = 0; i<outNodes.length; i++){
+						eList.push(Math.exp(outNodes[i].value));
+						eSum += eList[i];
+					}
+					for(let i = 0; i<outNodes.length; i++){
+						this.sftmx[i] = eList[i]/eSum;
+					}
+				}
+				backpropogate(inList,out){ //inputs and expected output: will revamp later
+					// update outputs... maybe needs relu?
+					// softmax --> e^value/(sum of e^values)
+					// sum of softmax is always 1
+					// cross entropy = -log("p") where p is the softmax value of the correct answer
+					// total cross entropy is sum for each
+					// run gradient descent for cross-entropy with respect to each weight or bias
+					// try to make 0 = derivative of cross-entropy with respect to the weight or bias
+					// dCE/d<variable> = dCE/dp * dp/dRaw * dRaw/d<variable>
+					// dCE/d<variable> = (-1/"p") * ("p"*(1-"p")) * dRaw/d<variable>
+					// dCE/d<variable> = "p" -1 * dRaw/d<variable> WHERE Raw is the output before softmax
+					// current = relu[(previous*w)+b]
+					// dcurrent/dprevious = drelu/dinside * d((previous*w)+b)/dprevious
+					// ^^^^ so if current = 0, derivative is 0; else derivative = w
+					// dRaw/d<variable> = dRaw/dprevious * dcurrent/dprevious * ... * dcurrent/dprevious * dcurrent/dvariable
+					// for weights: dcurrent/dw = drelu/dinside * d((previous*w)+b)/dw = drelu/dinside * previous
+					// for biases: dcurrent/db = drelu/dinside * d((previous*w)+b)/db = drelu/dinside * 1
+					
+					// each node in layer > 0 should keep dcurrent/dprevious precalculated
+					
+					// go through every weight
+					for(let i=1; i<this.nodes.length; i++){ // for each layer > 0
+						for(let j=0; j<this.nodes[i].length; j++){ // for each node
+							for(let j=0; j<this.nodes[i-1].length; j++){ // for each weight
+								// calculate the change for gradient descent
+								
+							}
+						}
+					}
+
 				}
 			}
 
