@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html style="padding:0;margin:0;">
+	<body style="padding:0;margin:0;overflow: hidden;">
+		<canvas id="screen"></canvas>
+		<script>
+			canvascolor = "rgba(19, 23, 26, 1)";
+			var canvas = document.getElementById('screen');
+			var ctx = canvas.getContext('2d');
+
+			//neural network has two inputs, two layers, two nodes per layer, and two outputs.
+			//uses reLu, optimizes with softmax, outputs with argmax,
+			//DRAWING THE NET:
+			// spaced evenly, draw the layers, with circles spaced evenly
+			// nodes are connected by lines
+			// each line has math rectangle displayed: "w=1.2, b=3.4"
+			// each circle has input and output inside: "i=1.2, o=1.2"
+
+
+
+			canvasResize();
+
+			document.addEventListener('keydown', (event) => {
+			  const keyName = event.key;
+				switch(keyName){
+					case 'Control':
+						return;
+					case 'Escape':
+
+						return;
+					case ' ':
+
+						return;
+				}
+			}, false);
+
+
+
+
+			class Node{
+				constructor(net,layer,id,x,y){
+					this.net = net;
+					this.layer = layer;
+					this.id = id; // id is index per layer
+
+					this.bias = 0;
+					this.value = 0;
+
+					if(this.layer > 0){
+						let inputNodes = this.net.nodes[this.layer-1];
+						this.inputWeights = []; //set random on gauss
+						for(let i=0; i<inputNodes.length; i++){
+							this.inputWeights.push(Math.random()*4-2);
+						}
+						this.update();
+					}
+
+					this.x = x;
+					this.y = y;
+				}
+				update(){
+					let inputNodes = this.net.nodes[this.layer-1];
+					let sum = 0;
+					for(let i=0; i<inputNodes.length; i++){
+						sum += inputNodes[i].value*this.inputWeights[i];
+					}
+					sum += this.bias;
+					this.value = Math.max(sum, 0);
+				}
+				draw(){
+					circle(this.x,this.y,25,"lightGray");
+					ctx.textAlign = "center";
+					ctx.font = 14 + "px Arial";
+					ctx.fillStyle = "black";
+					ctx.fillText(Math.round(this.value*100)/100, this.x, this.y+8);
+					ctx.font = 10 + "px Arial";
+					let plusorminus = "+";
+					if(this.bias < 0){
+						ctx.fillStyle = "red";
+						plusorminus = "-"
+					}else if(this.bias>0){
+						ctx.fillStyle = "green";
+					}
+					ctx.fillText(plusorminus + Math.round(this.bias*100)/100, this.x, this.y-10);
+
+				}
+				drawLines(){
+					if(this.layer > 0){ // draw edges to all nodes behind
+						let inputNodes = this.net.nodes[this.layer-1];
+						for(let i=0; i<inputNodes.length; i++){
+							ctx.strokeStyle = (this.inputWeights[i] < 0) ? "red" : "green";
+							ctx.lineWidth = this.inputWeights[i];
+							ctx.beginPath();
+							ctx.moveTo(this.x,this.y);
+							ctx.lineTo(inputNodes[i].x, inputNodes[i].y);
+							ctx.stroke();
+						}
+					}
+				}
+			}
+
+			class Net{
+				constructor(nodeList,x,y,w,h){ //hiddenList is a list of layers with corresponding numbers of nodes, including inputs and outputs
+					this.nodes = [];	
+					this.box = [x,y,w,h];
+				
+					for(let i=0; i<nodeList.length; i++){
+						this.nodes.push([]);
+						for(let j=0; j<nodeList[i]; j++){
+							let nodex = this.box[0] + (i+0.5)*this.box[2]/nodeList.length;
+							let nodey = this.box[1] + (j+0.5)*this.box[3]/nodeList[i];
+							this.nodes[i].push(new Node(this,i,j,nodex,nodey));
+						}
+					}
+					//[[node0,node1,node2]
+					// [node0,node1,node2]
+					// [node0,node1,node2]]
+				}
+				input(inList){
+					for(let i=0; i<inList.length; i++){ //set value of each node in layer 0
+						this.nodes[0][i].value = inList[i];
+					}
+					for(let i=1; i<this.nodes.length; i++){ //for each layer after 0,
+						for(let j=0; j<this.nodes[i].length; j++){ //for each node, update value
+							this.nodes[i][j].update();
+						}
+					}
+					this.draw();
+				}
+				draw(){ // draw in a rectangular box
+					ctx.lineWidth = 1;
+					ctx.strokeStyle = "gray";
+					ctx.fillStyle = "black";
+					ctx.fillRect(...this.box)
+					ctx.strokeRect(...this.box)
+
+					for(let i=0; i<this.nodes.length; i++){ // for each layer,
+						for(let j=0; j<this.nodes[i].length; j++){ // for each node
+							this.nodes[i][j].drawLines();
+						}
+					}
+					for(let i=0; i<this.nodes.length; i++){ // for each layer,
+						for(let j=0; j<this.nodes[i].length; j++){ // for each node
+							this.nodes[i][j].draw();
+						}
+					}
+				}
+			}
+
+			let neural = new Net([2,3,3,2],50,50,500,300)
+			neural.input([0.6,0.25]);
+
+			function circle(x,y,r,color,filled=true){
+
+				ctx.beginPath();
+				ctx.arc(x,y,r,0,2*Math.PI)
+				if(filled){
+					ctx.fillStyle = color;
+					ctx.fill();
+				}else{
+					ctx.strokeStyle = color;
+					ctx.stroke();
+				}
+			}
+
+			function fillscreen(){
+
+				ctx.fillStyle = canvascolor;
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+				// ctx.font = canvas.width / 30 + "px Arial";
+				// ctx.fillStyle = "rgba(255, 245, 80, 1)";
+				// ctx.fillText("hi", canvas.width/40, canvas.height / 20);
+
+			}
+
+			
+			function resid(dat){
+				let sum = 0;
+				for(let i = 0; i<dat.length; i++){
+					sum += dat[i] - (a*i*i+b*i+c);
+				}
+				return sum;
+			}
+
+			setInterval(function(){
+				fillscreen();
+				neural.draw();
+			}, 50);
+
+
+			window.onresize = canvasResize;
+			function canvasResize() {
+				canvas.width  = window.innerWidth;
+				canvas.height = window.innerHeight;
+				// ctx.fillStyle = '#13171A';
+				// ctx.fillStyle = canvascolor;
+				// ctx.fillRect(0, 0, canvas.width, canvas.height);
+				fillscreen();
+			}
+
+		</script>
+	</body>
+</html>
