@@ -15,7 +15,7 @@
 			// each line has math rectangle displayed: "w=1.2, b=3.4"
 			// each circle has input and output inside: "i=1.2, o=1.2"
 
-
+			let pause = false;
 
 			canvasResize();
 
@@ -28,7 +28,7 @@
 
 						return;
 					case ' ':
-
+						pause = !pause;
 						return;
 				}
 			}, false);
@@ -43,6 +43,7 @@
 					this.id = id; // id is index per layer
 
 					this.bias = 0;
+					this.preBias = 0;
 					this.value = 0;
 
 					this.newBias = 0;
@@ -68,8 +69,13 @@
 					for(let i=0; i<inputNodes.length; i++){
 						sum += inputNodes[i].value*this.inputWeights[i];
 					}
+					this.preBias = sum;
 					sum += this.bias;
-					this.value = Math.max(sum, 0);
+					if(this.layer<this.net.nodes.length-1){
+						this.value = Math.max(sum, 0);
+					}else{
+						this.value = sum;
+					}
 				}
 				draw(){
 					circle(this.x,this.y,25,"lightGray");
@@ -93,7 +99,7 @@
 						let inputNodes = this.net.nodes[this.layer-1];
 						for(let i=0; i<inputNodes.length; i++){
 							ctx.strokeStyle = (this.inputWeights[i] < 0) ? "red" : "green";
-							ctx.lineWidth = Math.sqrt(this.inputWeights[i]);
+							ctx.lineWidth = Math.cbrt(this.inputWeights[i]);
 							ctx.beginPath();
 							ctx.moveTo(this.x,this.y);
 							ctx.lineTo(inputNodes[i].x, inputNodes[i].y);
@@ -107,7 +113,7 @@
 					// if the current value is 0, then drelu/dinside = 0. else, 1
 					let inputNodes = this.net.nodes[this.layer-1];
 
-					if(this.value = 0){
+					if(this.preBias <= 0){
 						this.dCurdPrev.fill(0);
 					}  else{
 						for(let i=0; i<inputNodes.length; i++){
@@ -140,6 +146,9 @@
 					for(let i=0; i<inList.length; i++){ //set value of each node in layer 0
 						this.nodes[0][i].value = inList[i];
 					}
+					this.update();
+				}
+				update(){
 					for(let i=1; i<this.nodes.length; i++){ //for each layer after 0,
 						for(let j=0; j<this.nodes[i].length; j++){ //for each node, update value
 							this.nodes[i][j].update();
@@ -185,7 +194,7 @@
 						this.sftmx[i] = eList[i]/eSum;
 					}
 				}
-				backpropogate(inList,out){ //inputs and expected output: will revamp later
+				backpropogate(out,log=false){ //inputs and expected output: will revamp later
 					// update outputs... maybe needs relu?
 					// softmax --> e^value/(sum of e^values)
 					// sum of softmax is always 1
@@ -193,32 +202,120 @@
 					// total cross entropy is sum for each
 					// run gradient descent for cross-entropy with respect to each weight or bias
 					// try to make 0 = derivative of cross-entropy with respect to the weight or bias
-					// dCE/d<variable> = dCE/dp * dp/dRaw * dRaw/d<variable>
+					// dCE/d<variable> = dCEi/dpi * dp/dRaw * dRaw/d<variable>
 					// dCE/d<variable> = (-1/"p") * ("p"*(1-"p")) * dRaw/d<variable>
-					// dCE/d<variable> = "p" -1 * dRaw/d<variable> WHERE Raw is the output before softmax
-					// current = relu[(previous*w)+b]
-					// dcurrent/dprevious = drelu/dinside * d((previous*w)+b)/dprevious
-					// ^^^^ so if current = 0, derivative is 0; else derivative = w
+					// *dCE/d<variable> = ("p" -1) * dRaw/d<variable> for each CE that is SAME as dataset
+					// *dCE/d<variable> = "p" * dRaw/d<variable> for each CE that is different than dataset
+					// current = relu[(sum[previousi*wi])+b]
+					// dcurrent/dprevious = drelu/dinside * sum[d(previousi*wi)/dprevious]
+					// dcurrent/dprevious = drelu/dinside * sum[w]
+					// ^^^^ so if current = 0, derivative is 0; else derivative = sum of w
 					// dRaw/d<variable> = dRaw/dprevious * dcurrent/dprevious * ... * dcurrent/dprevious * dcurrent/dvariable
-					// for weights: dcurrent/dw = drelu/dinside * d((previous*w)+b)/dw = drelu/dinside * previous
-					// for biases: dcurrent/db = drelu/dinside * d((previous*w)+b)/db = drelu/dinside * 1
+					// for weights: dcurrent/dw = drelu/dinside * d((sum[previousi*wi])+b)/dw = drelu/dinside * previous
+					// for biases: dcurrent/db = drelu/dinside * d((sum[previousi*wi])+b)/db = drelu/dinside * 1
 					
 					// each node in layer > 0 should keep dcurrent/dprevious precalculated
 					
 					// go through every weight
-					for(let i=1; i<this.nodes.length; i++){ // for each layer > 0
-						for(let j=0; j<this.nodes[i].length; j++){ // for each node
-							for(let j=0; j<this.nodes[i-1].length; j++){ // for each weight
-								// calculate the change for gradient descent
-								
+					let weightChanges = [];
+					let biasChanges = [];
+					for(let i=1; i<this.nodes.length; i++){ // for each layer i > 0 
+						for(let j=0; j<this.nodes[i].length; j++){ // for each node j
+							for(let k=0; k<this.nodes[i-1].length; k++){ // for each weight k
+								let dce = 0;
+								for(let l=0; l<this.nodes[this.nodes.length-1].length; l++){ // for each output l
+									// calculate the change for gradient descent
+									// dCE/dw = ("p" -1) * dRaw/dprevious * dcurrent/dprevious * ... * dcurrent/dprevious * (drelu/dinside * previous)
+									// every node in the layers above is a factor
+									
+									// dcurrent/dw = dnode0/dw * dnode1/dnode0 * dnode2/dnode1
+
+									// current = relu[(sum[previousi*wi])+b]
+									// current = relu[(previousi*wi + previousi*wi + ... + previousi*wi)+b]
+									// dcurrent/dw = drelu/dinside * d(sum[previousi*wi]+b)/dw
+									// dcurrent/dw = drelu/dinside * d(previousi*wi + previousi*wi + ... + previousi*wi)/dw
+									// dcurrent/dw = drelu/dinside * d(relu[sum[previousj*wj]+b]*wi + relu[sum[previousj*wj]+b]*wi + ... + relu[sum[previousj*wj]+b]*wi)/dw
+									// dcurrent/dw = drelu/dinside * sum[d(relu[sum[previousj*wj]+b]*wi)/dw]
+									// dcurrent/dw = drelu/dinside * sum[wi * drelu/dinside * d(sum[previousj*wj]+b)/dw]
+									// d(sum[previousi*wi]+b)/dw = sum[wi * drelu/dinside * d(sum[previousj*wj]+b)/dw]
+									if(i == this.nodes.length-1){
+										if(l == out){ // dont know if this is necessary tbh
+											dce += (this.sftmx[l]-1) * this.nodes[i][j].inputWeights[k];
+											// console.log(dce)
+										} else{
+											dce += this.sftmx[l] * this.nodes[i][j].inputWeights[k];
+										}
+									}else{
+										if(l == out){ // dont know if this is necessary tbh
+											dce += (this.sftmx[l]-1) * this.chainRule(this.nodes.length-1,l,i,j) * this.nodes[i][j].inputWeights[k];
+											// console.log(dce)
+										} else{
+											dce += this.sftmx[l] * this.chainRule(this.nodes.length-1,l,i,j) * this.nodes[i][j].inputWeights[k];
+										}
+									}
+								}
+								if(log){
+									console.log(i,j,k,dce)
+								}
+								weightChanges.push([i,j,k,dce])
 							}
+							// do BIASES here
+							let dcee = 0;
+							for(let l=0; l<this.nodes[this.nodes.length-1].length; l++){
+								if(i == this.nodes.length-1){
+									if(l == out){ // dont know if this is necessary tbh
+										dcee += (this.sftmx[l]-1);
+										// console.log(dce)
+									} else{
+										dcee += this.sftmx[l];
+									}
+								}else{
+									if(l == out){ // dont know if this is necessary tbh
+										dcee += (this.sftmx[l]-1) * this.chainRule(this.nodes.length-1,l,i,j);
+										// console.log(dcee)
+									} else{
+										dcee += this.sftmx[l] * this.chainRule(this.nodes.length-1,l,i,j);
+									}								
+								}
+
+							}
+							biasChanges.push([i,j,dcee])
 						}
 					}
-
+					let weightRate = 0.1;
+					for(let weight of weightChanges){
+						this.nodes[weight[0]][weight[1]].inputWeights[weight[2]] -= weight[3]*weightRate;
+					}
+					let biasRate = 0.1;
+					for(let bias of biasChanges){
+						this.nodes[bias[0]][bias[1]].bias -= bias[2]*biasRate;
+					}
+					this.update();
+				}
+				chainRule(layer,id,targLayer,targId){ // given a node at layer,id: find derivative with respect to node at targLayer,targId
+					// sum of chainRule() for each deeper node, multiplied by 
+					if((layer < this.nodes.length-1) && (this.nodes[layer][id].preBias <= 0)){ // relu = 0
+						return 0;
+					}
+					if(layer > targLayer+1){
+						let sum = 0;
+						for(let i = 0; i<this.nodes[layer-1].length; i++){
+							sum += this.nodes[layer][id].inputWeights[i] * this.chainRule(layer-1,i,targLayer,targId);
+						}
+						return sum; // returns dcurrent/dw
+					}
+					return this.nodes[layer][id].inputWeights[targId];
 				}
 			}
 
-			let neural = new Net([2,3,3,2],50,50,500,300)
+			function relu(){
+
+			}
+			function drelu(){
+
+			}
+
+			let neural = new Net([2,2,2],50,50,500,300)
 			neural.input([0.6,0.25]);
 
 			function circle(x,y,r,color,filled=true){
@@ -233,30 +330,34 @@
 					ctx.stroke();
 				}
 			}
-
+			
 			function fillscreen(){
 
 				ctx.fillStyle = canvascolor;
 				ctx.fillRect(0, 0, canvas.width, canvas.height);
-				// ctx.font = canvas.width / 30 + "px Arial";
-				// ctx.fillStyle = "rgba(255, 245, 80, 1)";
-				// ctx.fillText("hi", canvas.width/40, canvas.height / 20);
-
-			}
-
-			
-			function resid(dat){
-				let sum = 0;
-				for(let i = 0; i<dat.length; i++){
-					sum += dat[i] - (a*i*i+b*i+c);
+				if(pause){
+					ctx.font = canvas.width / 30 + "px Arial";
+					ctx.fillStyle = "rgba(255, 245, 80, 1)";
+					ctx.fillText("paused", 36*canvas.width/40, 8*canvas.height / 20);
 				}
-				return sum;
+
 			}
 
+			let flip = false;
 			setInterval(function(){
 				fillscreen();
 				neural.draw();
-			}, 50);
+				if(!pause){
+					// flip = !flip;
+					if(flip){
+						neural.input([0.1,0.9]);
+						neural.backpropogate(1);
+					}else{
+						neural.input([0.9,0.1]);
+						neural.backpropogate(0);
+					}
+				}
+			}, 200);
 
 
 			window.onresize = canvasResize;
